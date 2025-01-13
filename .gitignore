@@ -1,0 +1,16 @@
+# python generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# venv
+.venv
+
+# 環境依存ファイル
+.python-version
+
+# バージョン管理不要な依存関係ファイル（必要に応じて）
+*.lock
