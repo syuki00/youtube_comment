@@ -1,37 +1,51 @@
-import requests
-import json
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from googleapiclient.discovery import build
+import os
+import youtube_comment.settings as settings
 
-URL = 'https://www.googleapis.com/youtube/v3/'
+# FastAPI アプリケーションの作成
+app = FastAPI()
 
-API_KEY = 'AIzaSyAXDopzPeJnzW7_IHB8JkxiQz--_w6xkf8'
+# YouTube Data API の設定
+API_KEY = settings.AK
+YOUTUBE_API_SERVICE_NAME = "youtube"
+YOUTUBE_API_VERSION = "v3"
 
-def print_video_comment(video_id, next_page_token):
-  params = {
-    'key': API_KEY,
-    'part': 'snippet',
-    'videoId': video_id,
-    'order': 'relevance',
-    'textFormat': 'plaintext',
-    'maxResults': 100,
-  }
-  if next_page_token is not None:
-    params['pageToken'] = next_page_token
-  response = requests.get(URL + 'commentThreads', params=params)
-  resource = response.json()
+# コメント取得用のリクエストモデル
+class VideoRequest(BaseModel):
+    video_id: str
 
-  for comment_info in resource['items']:
-    # コメント
-    text = comment_info['snippet']['topLevelComment']['snippet']['textDisplay']
-    # グッド数
-    like_cnt = comment_info['snippet']['topLevelComment']['snippet']['likeCount']
-    # 返信数
-    reply_cnt = comment_info['snippet']['totalReplyCount']
+# 動画コメントを取得する関数
+def get_youtube_comments(video_id: str):
+    try:
+        # YouTube Data API クライアントの作成
+        youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=API_KEY)
+        
+        # コメントスレッドのリクエスト
+        response = youtube.commentThreads().list(
+            part="snippet",
+            videoId=video_id,
+            textFormat="plainText",
+            maxResults=20  # 必要に応じて変更
+        ).execute()
 
-    print('{}\t{}\t{}'.format(text.replace('\n', ' '), like_cnt, reply_cnt))
-  
-  if 'nextPageToken' in resource:
-    print_video_comment(video_id, resource["nextPageToken"])
+        # コメントをパース
+        comments = []
+        for item in response.get("items", []):
+            comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+            author = item["snippet"]["topLevelComment"]["snippet"]["authorDisplayName"]
+            comments.append({"author": author, "comment": comment})
 
-# ここにVideo IDを入力
-video_id = 'TlcfucoVb9g'
-print_video_comment(video_id, None)
+        return comments
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching comments: {str(e)}")
+
+# エンドポイント定義
+@app.post("/get_comments")
+async def fetch_comments(request: VideoRequest):
+    comments = get_youtube_comments(request.video_id)
+    if not comments:
+        raise HTTPException(status_code=404, detail="No comments found")
+    return {"video_id": request.video_id, "comments": comments}
